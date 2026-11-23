@@ -13,7 +13,7 @@
 
 ## ติดตั้งหลังบ้าน
 1. สร้างโปรเจกต์ที่ script.google.com แล้ววาง `apps-script/Code.gs`
-2. รัน `setup()` หนึ่งครั้ง จะสร้าง Google Sheet "Pet tracking app", โฟลเดอร์ "Pet tracking app – รูป" และ API KEY (ดูใน Execution log)
+2. รัน `setup()` หนึ่งครั้ง จะสร้าง Google Sheet "App Meow", โฟลเดอร์ "App Meow – รูป" และ API KEY (ดูใน Execution log)
 3. Deploy › New deployment › Web app · Execute as: Me · Who has access: Anyone
 4. เปิดหน้าเว็บ ใส่ Web app URL + API KEY หรือใช้ลิงก์ `#setup=` (base64url ของ `{"u":url,"k":key}`)
 

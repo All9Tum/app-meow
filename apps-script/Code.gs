@@ -1,7 +1,7 @@
 /**
  * App Meow (แอพเหมียว) — Apps Script API
  * 1) สร้างโปรเจกต์ที่ script.google.com แล้ววางไฟล์นี้
- * 2) รัน setup() หนึ่งครั้ง (สร้าง Google Sheet "Pet tracking app", โฟลเดอร์รูป และ API KEY)
+ * 2) รัน setup() หนึ่งครั้ง (สร้าง Google Sheet "App Meow", โฟลเดอร์รูป และ API KEY)
  * 3) Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone)
  * ทุกคำขอต้องแนบ API KEY ไม่งั้นถูกปฏิเสธ
  */
@@ -51,7 +51,7 @@ function setup() {
   var id = props.getProperty('SHEET_ID');
   if (id) ss = SpreadsheetApp.openById(id);
   else {
-    ss = SpreadsheetApp.create('Pet tracking app');
+    ss = SpreadsheetApp.create('App Meow');
     props.setProperty('SHEET_ID', ss.getId());
   }
   Object.keys(SHEETS).forEach(function (name) {
@@ -101,7 +101,7 @@ function setup() {
   }
 
   if (!props.getProperty('FOLDER_ID')) {
-    var folder = DriveApp.createFolder('Pet tracking app – รูป');
+    var folder = DriveApp.createFolder('App Meow – รูป');
     props.setProperty('FOLDER_ID', folder.getId());
   }
   if (!props.getProperty('API_KEY')) {
