@@ -10,8 +10,21 @@ var SHEETS = {
   Pets: ['pet_id', 'name', 'color_main', 'color_deep', 'color_tint', 'hashtag', 'birthday', 'adopted_on',
     'breed', 'coat', 'sex', 'neutered', 'microchip', 'photo_id', 'card_front_id', 'card_back_id',
     'owner_name', 'owner_address', 'card_issued_on', 'sort', 'created_at', 'updated_at'],
-  Weights: ['weight_id', 'pet_id', 'date', 'kg', 'note', 'created_at']
+  Weights: ['weight_id', 'pet_id', 'date', 'kg', 'note', 'created_at'],
+  CareLogs: ['log_id', 'task', 'pet_id', 'date', 'next_due', 'cal_event_id', 'note', 'created_at'],
+  Health: ['rec_id', 'pet_id', 'type', 'date', 'title', 'clinic', 'detail', 'cost', 'next_due', 'cal_event_id', 'created_at'],
+  Expenses: ['exp_id', 'date', 'category', 'pet_id', 'title', 'amount', 'note', 'created_at']
 };
+var DATE_COLS = { Weights: ['date'], CareLogs: ['date', 'next_due'], Health: ['date', 'next_due'], Expenses: ['date'] };
+
+// งานดูแล: water/scoop/change = ทั้งบ้าน, bath = รายตัว
+var CARE_TASKS = { water: 'เติมน้ำ', scoop: 'เก็บทราย', change: 'เปลี่ยนทรายทั้งกระบะ', bath: 'อาบน้ำ' };
+var HEALTH_TYPES = { vaccine: 'วัคซีน', deworm: 'ถ่ายพยาธิ', flea: 'หยดหมัด', vet: 'หาหมอ', med: 'ยา' };
+var EXPENSE_CATS = ['อาหาร', 'ทราย', 'ของใช้', 'หาหมอ / ยา', 'วัคซีน / ป้องกัน', 'อื่นๆ'];
+
+// ชีตของแอพติดบ้าน (อ่านอย่างเดียว) — ดึงของหมวด "ของแมว"
+var TIDBAAN_DEFAULT_ID = '1bBq8KssdreaGjuzlyv52ukZkyElwUR4jiv9gYdGAaDI';
+var TIDBAAN_CAT = 'ของแมว';
 
 // ช่องที่หน้าเว็บแก้ได้ (รูปแก้ผ่าน uploadPhoto เท่านั้น)
 var PET_EDITABLE = ['name', 'hashtag', 'birthday', 'adopted_on', 'breed', 'coat', 'sex', 'neutered',
@@ -84,8 +97,17 @@ function setup() {
     pets.getRange(1, SHEETS.Pets.indexOf(c) + 1, pets.getMaxRows(), 1).setNumberFormat('@');
   });
 
+  Object.keys(DATE_COLS).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    DATE_COLS[name].forEach(function (c) {
+      sh.getRange(1, SHEETS[name].indexOf(c) + 1, sh.getMaxRows(), 1).setNumberFormat('@');
+    });
+  });
+  if (!props.getProperty('TIDBAAN_ID')) props.setProperty('TIDBAAN_ID', TIDBAAN_DEFAULT_ID);
+  // ขอสิทธิ์ปฏิทินตั้งแต่ตอน setup (ครั้งแรกจะมีหน้าขออนุญาต)
+  CalendarApp.getDefaultCalendar();
+
   var w = ss.getSheetByName('Weights');
-  w.getRange(1, 3, w.getMaxRows(), 1).setNumberFormat('@');
   if (w.getLastRow() < 2) {
     var wr = [];
     var n = 0;
@@ -141,8 +163,61 @@ function doPost(e) {
 
 var ACTIONS = {
   getAll: function () {
-    return { pets: readAll_('Pets'), weights: readAll_('Weights') };
+    var care = readAll_('CareLogs');
+    return {
+      pets: readAll_('Pets'), weights: readAll_('Weights'),
+      care: care.slice(-300), health: readAll_('Health'), expenses: readAll_('Expenses'),
+      tidbaan: tidbaan_()
+    };
   },
+
+  /* ----- งานดูแล ----- */
+  logCare: function (p) {
+    if (!CARE_TASKS[p.task]) throw new Error('ไม่รู้จักงานนี้');
+    if (p.task === 'bath' && !petExists_(p.pet_id)) throw new Error('ไม่พบน้อง');
+    var date = checkDate_(p.date || today_(), 'วันที่');
+    var next = p.next_due ? checkDate_(p.next_due, 'วันนัดครั้งถัดไป') : '';
+    var row = { log_id: id_('C'), task: p.task, pet_id: p.task === 'bath' ? p.pet_id : '', date: date,
+      next_due: next, cal_event_id: '', note: clean_(p.note || ''), created_at: new Date().toISOString() };
+    if (next && p.calendar) row.cal_event_id = calEvent_('[App Meow] ' + CARE_TASKS[p.task], next, 'นัดจาก App Meow');
+    append_('CareLogs', row);
+    return row;
+  },
+  deleteCare: function (p) { return deleteById_('CareLogs', 'log_id', p.log_id); },
+
+  /* ----- สุขภาพ ----- */
+  addHealth: function (p) {
+    if (!HEALTH_TYPES[p.type]) throw new Error('ประเภทไม่ถูกต้อง');
+    var pet = readAll_('Pets').filter(function (r) { return r.pet_id === p.pet_id; })[0];
+    if (!pet) throw new Error('ไม่พบน้อง');
+    var cost = p.cost === '' || p.cost == null ? '' : Number(p.cost);
+    if (cost !== '' && !(cost >= 0 && cost < 1e7)) throw new Error('ค่าใช้จ่ายไม่ถูกต้อง');
+    var row = { rec_id: id_('H'), pet_id: p.pet_id, type: p.type, date: checkDate_(p.date, 'วันที่'),
+      title: clean_(p.title || ''), clinic: clean_(p.clinic || ''), detail: clean_(p.detail || ''), cost: cost,
+      next_due: p.next_due ? checkDate_(p.next_due, 'วันนัดครั้งถัดไป') : '', cal_event_id: '',
+      created_at: new Date().toISOString() };
+    if (row.next_due && p.calendar) {
+      row.cal_event_id = calEvent_('[App Meow] ' + HEALTH_TYPES[p.type] + ' ' + pet.name, row.next_due,
+        [row.title, row.clinic].filter(String).join(' · '));
+    }
+    append_('Health', row);
+    return row;
+  },
+  deleteHealth: function (p) { return deleteById_('Health', 'rec_id', p.rec_id); },
+
+  /* ----- ค่าใช้จ่าย (กรอกเอง) ----- */
+  addExpense: function (p) {
+    if (EXPENSE_CATS.indexOf(p.category) < 0) throw new Error('หมวดไม่ถูกต้อง');
+    var amount = Number(p.amount);
+    if (!(amount > 0 && amount < 1e7)) throw new Error('จำนวนเงินไม่ถูกต้อง');
+    if (p.pet_id && !petExists_(p.pet_id)) throw new Error('ไม่พบน้อง');
+    var row = { exp_id: id_('E'), date: checkDate_(p.date, 'วันที่'), category: p.category, pet_id: p.pet_id || '',
+      title: clean_(p.title || ''), amount: Math.round(amount * 100) / 100, note: clean_(p.note || ''),
+      created_at: new Date().toISOString() };
+    append_('Expenses', row);
+    return row;
+  },
+  deleteExpense: function (p) { return deleteById_('Expenses', 'exp_id', p.exp_id); },
 
   savePet: function (p) {
     var sh = sheet_('Pets');
@@ -234,6 +309,8 @@ function readAll_(name) {
     head.forEach(function (h, i) { o[h] = r[i]; });
     if (name === 'Weights') o.kg = Number(o.kg);
     if (name === 'Pets') o.sort = Number(o.sort) || 0;
+    if (name === 'Health') o.cost = o.cost === '' ? '' : Number(String(o.cost).replace(/,/g, ''));
+    if (name === 'Expenses') o.amount = Number(String(o.amount).replace(/,/g, ''));
     return o;
   });
 }
@@ -244,6 +321,80 @@ function writeRow_(sh, rowNum, name, obj) {
     var v = obj[h];
     return v === undefined || v === null ? '' : v;
   })]);
+}
+
+function append_(name, row) {
+  var sh = sheet_(name);
+  writeRow_(sh, sh.getLastRow() + 1, name, row);
+}
+
+function deleteById_(name, key, id) {
+  var sh = sheet_(name);
+  var rows = readAll_(name);
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][key] === id) {
+      if (rows[i].cal_event_id) {
+        try { CalendarApp.getDefaultCalendar().getEventById(rows[i].cal_event_id).deleteEvent(); } catch (x) {}
+      }
+      sh.deleteRow(i + 2);
+      return { id: id };
+    }
+  }
+  throw new Error('ไม่พบรายการนี้');
+}
+
+function id_(prefix) { return prefix + Date.now().toString(36) + Math.floor(Math.random() * 1000); }
+
+function today_() { return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'); }
+
+function checkDate_(s, label) {
+  s = String(s || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error(label + 'ไม่ถูกต้อง');
+  return s;
+}
+
+// นัดทั้งวันในปฏิทินหลัก (ใช้เที่ยงวันกันวันเลื่อนจากเขตเวลา)
+function calEvent_(title, ymd, desc) {
+  var p = ymd.split('-').map(Number);
+  var ev = CalendarApp.getDefaultCalendar().createAllDayEvent(title, new Date(p[0], p[1] - 1, p[2], 12), { description: desc || '' });
+  return ev.getId();
+}
+
+// อ่านสต็อกและการซื้อหมวด "ของแมว" จากชีตติดบ้าน
+function tidbaan_() {
+  try {
+    var id = PropertiesService.getScriptProperties().getProperty('TIDBAAN_ID') || TIDBAAN_DEFAULT_ID;
+    var tb = SpreadsheetApp.openById(id);
+    var items = tableOf_(tb.getSheetByName('Items')).filter(function (r) { return r.category === TIDBAAN_CAT; });
+    var byId = {};
+    items.forEach(function (r) { byId[r.item_id] = r; });
+    var stock = items.map(function (r) {
+      return { item_id: r.item_id, name: r.name, brand: r.brand, group: r.group, icon: r.icon,
+        unit: r.unit, qty_on_hand: Number(r.qty_on_hand) || 0 };
+    });
+    var purchases = tableOf_(tb.getSheetByName('Transactions')).filter(function (t) {
+      return t.type === 'BUY' && byId[t.item_id];
+    }).map(function (t) {
+      var it = byId[t.item_id];
+      var d = new Date(t.timestamp);
+      return { tx_id: t.tx_id, date: isNaN(d) ? '' : Utilities.formatDate(d, 'Asia/Bangkok', 'yyyy-MM-dd'),
+        name: it.name, group: it.group, amount: (Number(t.packs) || 0) * (Number(t.price_per_pack) || 0) };
+    });
+    return { ok: true, stock: stock, purchases: purchases };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err), stock: [], purchases: [] };
+  }
+}
+
+function tableOf_(sh) {
+  if (!sh || sh.getLastRow() < 2) return [];
+  var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+  var head = v[0];
+  return v.slice(1).filter(function (r) { return r[0] !== ''; }).map(function (r) {
+    var o = {};
+    head.forEach(function (h, i) { o[h] = r[i]; });
+    return o;
+  });
 }
 
 function petExists_(id) {

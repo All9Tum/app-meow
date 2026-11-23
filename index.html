@@ -178,7 +178,7 @@ const DEMO_SEED = (()=>{
   const W = [['2021-10-01',5.2,0,0,0],['2022-04-01',5.15,2.1,0,0],['2022-10-01',5.5,2.95,0,0],['2023-04-28',5.5,3.8,0,0],['2023-08-10',5.7,3.8,1.1,0],['2023-11-10',5.9,3.8,2.5,0],['2024-10-12',6,3.8,2.5,0],['2025-05-02',6,3.8,2.3,3],['2025-11-23',6,3.8,4.2,4.7],['2026-08-30',5.7,3.7,3.9,6.1]];
   const weights = []; let n=0;
   W.forEach(r=>{ for(let k=1;k<=4;k++) if(r[k]>0) weights.push({weight_id:'D'+(++n),pet_id:P[k-1][0],date:r[0],kg:r[k],note:'',created_at:''}); });
-  return {pets, weights};
+  return {pets, weights, care:[], health:[], expenses:[], tidbaan:{ok:true, stock:[], purchases:[]}};
 })();
 function demoApi(action, p){
   const d = LS.get('pt_demo', null) || JSON.parse(JSON.stringify(DEMO_SEED));
@@ -189,6 +189,16 @@ function demoApi(action, p){
     if(action==='deleteWeight'){ d.weights = d.weights.filter(w=>w.weight_id!==p.weight_id); save(); return res(p); }
     if(action==='savePet'){ const x = d.pets.find(q=>q.pet_id===p.pet_id); Object.assign(x,p); save(); return res(x); }
     if(action==='uploadPhoto'){ const x = d.pets.find(q=>q.pet_id===p.pet_id); const id='demo_'+p.kind+'_'+Date.now(); x[{photo:'photo_id',card_front:'card_front_id',card_back:'card_back_id'}[p.kind]]=id; const ph=LS.get('pt_demo_ph',{}); ph[id]=p.dataUrl; LS.set('pt_demo_ph',ph); save(); return res(x); }
+    if(['logCare','addHealth','addExpense'].includes(action)){
+      const k = {logCare:['care','log_id'], addHealth:['health','rec_id'], addExpense:['expenses','exp_id']}[action];
+      const row = Object.assign({cal_event_id: p.calendar && p.next_due ? 'demo-ev' : '', created_at:new Date().toISOString()}, p, {[k[1]]:'D'+Date.now()});
+      if(action==='addHealth') row.cost = p.cost===''?'':+p.cost; if(action==='addExpense') row.amount = +p.amount; delete row.calendar;
+      d[k[0]] = (d[k[0]]||[]).concat([row]); save(); return res(row);
+    }
+    if(['deleteCare','deleteHealth','deleteExpense'].includes(action)){
+      const k = {deleteCare:['care','log_id'], deleteHealth:['health','rec_id'], deleteExpense:['expenses','exp_id']}[action];
+      d[k[0]] = (d[k[0]]||[]).filter(r=>r[k[1]]!==p[k[1]]); save(); return res(p);
+    }
     if(action==='getPhoto'){ return res({file_id:p.file_id,dataUrl:(LS.get('pt_demo_ph',{}))[p.file_id]||''}); }
     res(null);
   }, 150));
@@ -325,7 +335,7 @@ function catRow(){
 }
 function navBar(){
   const items=[['home','home','หน้าแรก'],['care','drop','ดูแล'],['health','heart','สุขภาพ'],['money','wallet','ค่าใช้จ่าย'],['profile','user','โปรไฟล์']];
-  const onv = {weights:'home',add:'home',edit:'profile'}[S.view] || S.view;
+  const onv = {weights:'home',add:'home',edit:'profile',addHealth:'health',addExpense:'money'}[S.view] || S.view;
   return `<nav class="bar" aria-label="เมนูหลัก">${items.map(([v,ic,l])=>`<button data-act="go" data-v="${v}" class="${onv===v?'on':''}" ${onv===v?'aria-current="page"':''}>${icon(ic)}${l}</button>`).join('')}</nav>`;
 }
 function hills(){ return `<div class="hill" style="left:-40px;bottom:-70px;width:260px;height:140px;opacity:.22"></div><div class="hill" style="right:-60px;bottom:-80px;width:300px;height:150px;opacity:.14"></div>`; }
@@ -437,9 +447,200 @@ function vEdit(){
   </form>`;
 }
 
-function vSoon(){
-  const m = {care:['drop','งานดูแล','เติมน้ำ เก็บทราย เปลี่ยนทราย อาบน้ำรายตัว และสต็อกของแมวจากติดบ้าน'],health:['heart','สุขภาพ','วัคซีน ถ่ายพยาธิ หยดหมัด หาหมอ ยา พร้อมนัดใน Google Calendar'],money:['wallet','ค่าใช้จ่าย','สรุปต่อตัว ต่อหมวด ต่อเดือน/ปี ดึงยอดของแมวจากติดบ้านอัตโนมัติ']}[S.view];
-  return `<div class="top"><h1>${m[1]}</h1></div><div class="soon"><div class="ic">${icon(m[0])}</div><h2 style="margin:6px 0 0;font-size:20px;font-weight:500">อยู่ในเวอร์ชันถัดไป</h2><p class="sub" style="max-width:280px;margin:0;line-height:1.6">${m[2]}</p></div>`;
+/* ===== ดูแล / สุขภาพ / ค่าใช้จ่าย ===== */
+const CARE = [
+  {k:'water', name:'เติมน้ำ', ic:'M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z'},
+  {k:'scoop', name:'เก็บทราย', ic:'M4 14h16l-2 6H6zM8 14V9a4 4 0 0 1 8 0v5'},
+  {k:'change', name:'เปลี่ยนทรายทั้งกระบะ', ic:'M4 7h16M7 7V5h10v2M6 7l1 13h10l1-13'}
+];
+const HT = {vaccine:'วัคซีน', deworm:'ถ่ายพยาธิ', flea:'หยดหมัด', vet:'หาหมอ/ป่วย', med:'ยา'};
+const HT_IC = {
+  vaccine:'M18 2l4 4M17 7l3-3M19 9L9 19l-4 1 1-4L16 6zM14 8l2 2',
+  deworm:'M10.5 20.5a7 7 0 0 1-7-7V7a3.5 3.5 0 0 1 7 0v10a3.5 3.5 0 0 0 7 0V7',
+  flea:'M12 2v4M5 7l2 2M19 7l-2 2M8 13a4 4 0 0 0 8 0v-2a4 4 0 0 0-8 0zM12 17v5',
+  vet:'M4 4v6a6 6 0 0 0 12 0V4M16 14a4 4 0 1 0 4 0',
+  med:'M10.5 20.5a5 5 0 0 1-7-7l10-10a5 5 0 0 1 7 7zM8.5 8.5l7 7'
+};
+const HT_PH = {vaccine:'เช่น วัคซีนรวม, พิษสุนัขบ้า', deworm:'ชื่อยาถ่ายพยาธิ', flea:'ยี่ห้อยาหยด', vet:'อาการ / เรื่องที่ไปหาหมอ', med:'ชื่อยา'};
+const EXP_CATS = ['อาหาร','ทราย','ของใช้','หาหมอ / ยา','วัคซีน / ป้องกัน','อื่นๆ'];
+const EXP_COL = {'อาหาร':'#F28C28','ทราย':'#C9A27A','ของใช้':'#8C7B6B','หาหมอ / ยา':'#E04B4B','วัคซีน / ป้องกัน':'#3B6FD9','อื่นๆ':'#B9AC9F'};
+const hic = d => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+const arr = k => (S.data && S.data[k]) || [];
+const baht = n => '฿' + Number(n||0).toLocaleString('th-TH', {maximumFractionDigits:2});
+function dayDiff(a, b){ return Math.round((Date.parse(b) - Date.parse(a)) / 864e5); }
+function since(d, created){
+  if(!d) return '';
+  const n = dayDiff(d, today());
+  if(n === 0){ const t = created ? new Date(created) : null; return 'วันนี้' + (t && !isNaN(t) ? ' ' + String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0') : ''); }
+  if(n === 1) return 'เมื่อวาน';
+  return fmtDate(d) + ' (' + n + ' วันก่อน)';
+}
+function dueText(d){
+  if(!d) return '';
+  const n = dayDiff(today(), d);
+  return n > 0 ? `อีก ${n} วัน` : n === 0 ? 'วันนี้' : `เลยมา ${-n} วัน`;
+}
+function latest(list){ return list.slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:(a.created_at<b.created_at?1:-1))[0]; }
+function lastCare(task, pid){ return latest(arr('care').filter(c=>c.task===task && (task!=='bath' || c.pet_id===pid))); }
+const calChip = '<span style="align-self:flex-start;margin-top:4px;font-size:11px;color:#2853AE;background:#E3ECFB;border-radius:999px;padding:3px 8px">นัดอยู่ใน Google Calendar</span>';
+function doneBtn(on, label, act, extra, color){
+  return `<button data-act="${act}" ${extra} style="min-width:84px;height:40px;padding:0 12px;border-radius:20px;font-size:13px;font-weight:600;flex-shrink:0;${on?'border:none;background:#E0F5E5;color:#1F7A3A':'border:2px solid '+(color||'#2B211B')+';background:#fff;color:'+(color||'#2B211B')}">${label}</button>`;
+}
+
+function vCare(){
+  const d = new Date();
+  const house = CARE.map(t=>{
+    const l = lastCare(t.k); const done = l && l.date === today();
+    let sub = l ? 'ล่าสุด ' + since(l.date, l.created_at) : 'ยังไม่เคยบันทึก';
+    let extra = '';
+    if(t.k==='change'){
+      const nx = latest(arr('care').filter(c=>c.task==='change' && c.next_due));
+      if(nx && nx.next_due >= (l?l.date:'')) { sub += ` · ครั้งถัดไป ${fmtDate(nx.next_due)} (${dueText(nx.next_due)})`; if(nx.cal_event_id) extra = calChip; }
+    }
+    const form = t.k==='change' && S.careForm ? `<form data-form="change" class="card" style="margin:10px 0 0;padding:14px;background:var(--chip);display:flex;flex-direction:column;gap:10px" novalidate>
+      <label class="f">นัดเปลี่ยนครั้งถัดไป (ไม่ใส่ก็ได้)<input class="inp" type="date" name="next_due" min="${today()}"></label>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" name="calendar" checked style="width:20px;height:20px"> สร้างนัดใน Google Calendar</label>
+      <div style="display:flex;gap:8px"><button type="button" class="btn ghost" data-act="careFormClose" style="height:46px">ยกเลิก</button><button class="btn" type="submit" style="height:46px;background:#2B211B" ${S.busy?'disabled':''}>${S.busy?'กำลังบันทึก…':'บันทึก'}</button></div></form>` : '';
+    return `<div style="background:#fff;border-radius:22px;padding:14px"><div style="display:flex;align-items:center;gap:12px">
+      <span style="width:48px;height:48px;border-radius:16px;background:var(--chip);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--soft)">${hic(t.ic)}</span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:500">${t.name}</span><span class="sub" style="font-size:12px">${sub}</span>${extra}</div>
+      ${t.k==='change' ? doneBtn(done, done?'✓ วันนี้แล้ว':'ทำแล้ว', 'careChange', '') : doneBtn(done, done?'✓ วันนี้แล้ว':'ทำแล้ว', 'care', `data-k="${t.k}"`)}
+    </div>${done?`<button class="link" data-act="careUndo" data-id="${l.log_id}" style="font-size:12px;padding:6px 0 0;color:var(--muted)">${S.delSure===l.log_id?'แตะอีกครั้งเพื่อยกเลิกรายการล่าสุด':'บันทึกผิด? ยกเลิกรายการล่าสุด'}</button>`:''}${form}</div>`;
+  }).join('');
+  const baths = pets().map(p=>{
+    const l = lastCare('bath', p.pet_id); const done = l && l.date === today();
+    return `<div class="it"><span class="dot" style="width:40px;height:40px;font-size:16px;border:none;background-color:${p.color_tint};color:${p.color_deep}">${esc(p.name.charAt(0))}</span>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:500">${esc(p.name)}</div><div class="sub" style="font-size:12px">${l?'อาบล่าสุด '+since(l.date, l.created_at):'ยังไม่เคยบันทึก'}</div></div>
+      ${doneBtn(done, done?'✓ อาบแล้ว':'อาบแล้ว', done?'careUndo':'care', done?`data-id="${l.log_id}" aria-label="ยกเลิกบันทึกอาบน้ำ ${esc(p.name)}"`:`data-k="bath" data-pid="${p.pet_id}"`, p.color_deep)}</div>`;
+  }).join('');
+  const tb = (S.data.tidbaan) || {ok:false, stock:[]};
+  const stock = !tb.ok ? `<div class="empty" style="background:var(--chip)"><b style="color:var(--ink)">ยังอ่านชีตติดบ้านไม่ได้</b><span>${esc(tb.error||'ลองกดดึงข้อมูลใหม่ในหน้าตั้งค่า')}</span></div>`
+    : !tb.stock.length ? `<div style="margin-top:12px;border-radius:16px;border:2px dashed var(--border);padding:18px;text-align:center;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:500">ยังไม่มีของหมวด "ของแมว"</span><span class="sub" style="font-size:12px">สแกนอาหารหรือทรายแมวในแอพติดบ้าน แล้วตั้งหมวดเป็น "ของแมว" สต็อกจะขึ้นตรงนี้</span></div>`
+    : `<div class="list" style="margin-top:6px">${tb.stock.map(i=>`<div class="it"><span style="font-size:22px;width:32px;text-align:center">${esc(i.icon||'')}</span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:500">${esc(i.name)}</div><div class="sub" style="font-size:12px">${esc(i.group||'')}</div></div><span class="mitr" style="font-size:16px;color:${i.qty_on_hand<=1?'#B52F2F':i.qty_on_hand<=2?'#A8530A':'var(--ink)'}">${i.qty_on_hand} ${esc(i.unit||'')}</span></div>`).join('')}</div>`;
+  return `<div class="top"><div><div class="sub">${THD[d.getDay()]} ${fmtDate(today())}</div><h1>งานดูแลวันนี้</h1></div></div>
+  <section style="margin:16px 20px 0"><h2 style="margin:0 0 10px;font-size:17px;font-weight:500">ทั้งบ้าน</h2><div style="display:flex;flex-direction:column;gap:10px">${house}</div></section>
+  <section class="card list" style="padding:6px 16px;margin-top:20px"><h2 style="margin:10px 0 2px">อาบน้ำ รายตัว</h2>${baths}</section>
+  <section class="card" style="margin-top:20px"><div class="row"><h2>ของแมวในบ้าน</h2><span style="font-size:11px;color:var(--soft);background:var(--chip);border-radius:999px;padding:3px 8px">ดึงจากติดบ้าน</span></div>${stock}</section>`;
+}
+
+function vHealth(){
+  const p = cur(); const tab = S.htab || 'next';
+  const recs = arr('health').filter(r=>r.pet_id===p.pet_id);
+  const seg = (v,l)=>`<button data-act="htab" data-v="${v}" aria-pressed="${tab===v}" style="height:40px;border:none;border-radius:999px;font-size:14px;font-weight:600;${tab===v?'background:#fff;color:var(--deep);box-shadow:0 2px 6px rgba(43,33,27,.08)':'background:transparent;color:var(--soft)'}">${l}</button>`;
+  let body;
+  if(tab==='next'){
+    const cards = ['vaccine','deworm','flea'].map(t=>{
+      const l = latest(recs.filter(r=>r.type===t));
+      const nx = latest(recs.filter(r=>r.type===t && r.next_due));
+      const due = nx && nx.next_due;
+      return `<div style="background:#fff;border-radius:22px;padding:14px;display:flex;gap:12px;align-items:center">
+        <span style="width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tint);color:var(--deep)">${hic(HT_IC[t])}</span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:500">${HT[t]}</span>
+          <span class="sub" style="font-size:12px">${l?'ทำล่าสุด '+fmtDate(l.date)+(l.title?' · '+esc(l.title):''):'ยังไม่มีบันทึก'}</span>${due && nx.cal_event_id?calChip:''}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0">${due?`<span class="sub" style="font-size:11px">นัด</span><span class="mitr" style="font-size:15px;font-weight:500;color:${dayDiff(today(),due)<0?'#B52F2F':'var(--deep)'}">${fmtDate(due)}</span><span style="font-size:11px;color:${dayDiff(today(),due)<0?'#B52F2F':'var(--muted)'}">${dueText(due)}</span>`:`<button class="link" data-act="addH" data-t="${t}">+ บันทึก</button>`}</div></div>`;
+    }).join('');
+    const other = recs.filter(r=>(r.type==='vet'||r.type==='med') && r.next_due && r.next_due >= today()).sort((a,b)=>a.next_due<b.next_due?-1:1);
+    body = `<div style="margin:14px 20px 0;display:flex;flex-direction:column;gap:10px">${cards}
+      ${other.map(r=>`<div style="background:#fff;border-radius:22px;padding:14px;display:flex;gap:12px;align-items:center"><span style="width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tint);color:var(--deep)">${hic(HT_IC[r.type])}</span><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:500">นัด${HT[r.type]}</div><div class="sub" style="font-size:12px">${esc(r.title||'')}${r.clinic?' · '+esc(r.clinic):''}</div></div><div style="text-align:right"><div class="mitr" style="color:var(--deep)">${fmtDate(r.next_due)}</div><div class="sub" style="font-size:11px">${dueText(r.next_due)}</div></div></div>`).join('')}</div>`;
+  } else {
+    const list = recs.slice().sort((a,b)=>a.date<b.date?1:-1);
+    body = `<div class="card list" style="padding:4px 16px">${list.length?list.map(r=>`<div style="padding:14px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px">
+      <div class="row"><span style="font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--tint);color:var(--deep)">${HT[r.type]||esc(r.type)}</span><span class="sub" style="font-size:12px">${fmtDate(r.date)}</span></div>
+      ${r.title?`<span style="font-size:14px;font-weight:500">${esc(r.title)}</span>`:''}
+      <span class="sub" style="font-size:12px">${[r.clinic, r.detail, r.cost!==''&&r.cost!=null?baht(r.cost):'', r.next_due?'นัดถัดไป '+fmtDate(r.next_due):''].filter(Boolean).map(esc).join(' · ')}</span>
+      <button class="del ${S.delSure===r.rec_id?'sure':''}" data-act="delH" data-id="${r.rec_id}" style="align-self:flex-end">${S.delSure===r.rec_id?'ยืนยันลบ'+(r.cal_event_id?' (ลบนัดในปฏิทินด้วย)':''):'ลบ'}</button></div>`).join(''):'<div class="sub" style="padding:16px 0">ยังไม่มีประวัติของ '+esc(p.name)+'</div>'}</div>`;
+  }
+  return `<div style="padding:20px 20px 18px;position:relative;overflow:hidden;border-radius:0 0 32px 32px;background:var(--tint)"><div class="hill" style="right:-60px;bottom:-90px;width:300px;height:150px;opacity:.18"></div>
+    <h1 style="position:relative;margin:0;font-size:26px;font-weight:600">สุขภาพ</h1></div>
+  ${catRow()}
+  <div class="seg">${seg('next','นัดถัดไป')}${seg('hist','ประวัติ')}</div>
+  ${body}
+  <section style="margin:20px 20px 0"><h2 style="margin:0 0 10px;font-size:17px;font-weight:500">บันทึกใหม่ของ ${esc(p.name)}</h2>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${Object.keys(HT).map(t=>`<button data-act="addH" data-t="${t}" style="height:76px;border-radius:18px;border:none;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:13px"><span style="display:flex;color:var(--deep)">${hic(HT_IC[t])}</span>${HT[t]}</button>`).join('')}</div></section>`;
+}
+
+function vAddHealth(){
+  const p = cur(); const t = S.htype || 'vaccine';
+  return `<div class="band">${hills()}</div>
+  <form class="sheet" data-form="health" novalidate>
+    <div class="row"><h1 style="margin:0;font-size:22px;font-weight:600">บันทึกสุขภาพ ${esc(p.name)}</h1><button type="button" class="iconbtn" style="background:var(--chip)" data-act="go" data-v="health" aria-label="ปิด">${icon('close')}</button></div>
+    <div class="chips" role="radiogroup" aria-label="ประเภท">${Object.keys(HT).map(k=>`<button type="button" class="chip" role="radio" aria-checked="${k===t}" data-act="htype" data-t="${k}" style="${k===t?'border-color:var(--main);background:var(--tint);color:var(--deep)':''}">${HT[k]}</button>`).join('')}</div>
+    <label class="f">วันที่<input class="inp" type="date" name="date" value="${today()}" max="${today()}"></label>
+    <label class="f">${t==='med'?'ชื่อยา':t==='vet'?'เรื่อง / อาการ':'ชื่อ / ยี่ห้อ'}<input class="inp" name="title" maxlength="200" placeholder="${HT_PH[t]}"></label>
+    <label class="f">คลินิก / โรงพยาบาล (ไม่ใส่ก็ได้)<input class="inp" name="clinic" maxlength="200"></label>
+    <label class="f">${t==='med'?'ขนาดและวิธีให้ยา':'รายละเอียด'} (ไม่ใส่ก็ได้)<textarea class="inp" name="detail" maxlength="500"></textarea></label>
+    <label class="f">ค่าใช้จ่าย (บาท, ไม่ใส่ก็ได้)<input class="inp" name="cost" inputmode="decimal" placeholder="0"></label>
+    <label class="f">นัดครั้งถัดไป (ไม่ใส่ก็ได้)<input class="inp" type="date" name="next_due" min="${today()}"></label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" name="calendar" checked style="width:20px;height:20px"> สร้างนัดใน Google Calendar</label>
+    <p class="sub" style="font-size:12px;margin:-8px 0 0">ค่าใช้จ่ายที่ใส่ตรงนี้จะนับในหน้าค่าใช้จ่ายของ ${esc(p.name)} ให้เอง</p>
+    <button class="btn" type="submit" ${S.busy?'disabled':''}>${S.busy?'กำลังบันทึก…':'บันทึก'}</button>
+  </form>`;
+}
+
+function tbCat(name, group){
+  const s = (group||'') + ' ' + (name||'');
+  if(/ทราย|litter/i.test(s)) return 'ทราย';
+  if(/อาหาร|ขนม|เม็ด|เปียก|ปลา|ไก่|food|treat|churu|ชูหรุ/i.test(s)) return 'อาหาร';
+  return 'ของใช้';
+}
+function moneyEntries(){
+  const out = [];
+  arr('expenses').forEach(e=>out.push({id:e.exp_id, date:e.date, cat:e.category, pet_id:e.pet_id||'', title:e.title||e.category, amount:+e.amount||0, src:'กรอกเอง', del:true}));
+  arr('health').forEach(h=>{ if(h.cost!=='' && +h.cost>0) out.push({id:h.rec_id, date:h.date, cat:(h.type==='vet'||h.type==='med')?'หาหมอ / ยา':'วัคซีน / ป้องกัน', pet_id:h.pet_id, title:HT[h.type]+(h.title?' · '+h.title:''), amount:+h.cost, src:'สุขภาพ'}); });
+  ((S.data.tidbaan||{}).purchases||[]).forEach(t=>out.push({id:t.tx_id, date:t.date, cat:tbCat(t.name,t.group), pet_id:'', title:t.name, amount:+t.amount||0, src:'ติดบ้าน'}));
+  return out;
+}
+function vMoney(){
+  const per = S.mper || 'month';
+  const ym = S.ym || today().slice(0,7), yy = S.yy || today().slice(0,4);
+  const key = per==='month' ? ym : yy;
+  const label = per==='month' ? `${TH[+ym.slice(5)-1]} ${ym.slice(0,4)}` : `ปี ${yy}`;
+  const list = moneyEntries().filter(e=>e.date && e.date.startsWith(key)).sort((a,b)=>a.date<b.date?1:-1);
+  const total = list.reduce((s,e)=>s+e.amount,0);
+  const bySrc = s => list.filter(e=>e.src===s).reduce((a,e)=>a+e.amount,0);
+  const view = S.mview || 'cat';
+  let rows;
+  if(view==='cat'){
+    rows = EXP_CATS.map(c=>({name:c, color:EXP_COL[c], amt:list.filter(e=>e.cat===c).reduce((a,e)=>a+e.amount,0)}));
+  } else {
+    rows = pets().map(p=>({name:p.name, color:p.color_main, amt:list.filter(e=>e.pet_id===p.pet_id).reduce((a,e)=>a+e.amount,0)}))
+      .concat([{name:'ใช้ร่วมกัน', color:'#B9AC9F', amt:list.filter(e=>!e.pet_id).reduce((a,e)=>a+e.amount,0), note:'อาหาร ทราย ของใช้ทั้งบ้าน'}]);
+  }
+  const mx = Math.max(1, ...rows.map(r=>r.amt));
+  const seg = (v,l)=>`<button data-act="mview" data-v="${v}" aria-pressed="${view===v}" style="height:40px;border:none;border-radius:999px;font-size:14px;font-weight:600;${view===v?'background:#fff;color:#2B211B;box-shadow:0 2px 6px rgba(43,33,27,.08)':'background:transparent;color:var(--soft)'}">${l}</button>`;
+  const pchip = (v,l)=>`<button data-act="mper" data-v="${v}" aria-pressed="${per===v}" style="height:40px;padding:0 18px;border-radius:999px;font-size:14px;font-weight:500;${per===v?'border:none;background:#2B211B;color:#fff':'border:1.5px solid var(--border);background:#fff;color:var(--soft)'}">${l}</button>`;
+  const petName = id => { const p = pets().find(q=>q.pet_id===id); return p ? p.name : 'ใช้ร่วมกัน'; };
+  return `<div class="top"><h1 style="font-size:26px">ค่าใช้จ่าย</h1><button class="iconbtn dark" style="width:auto;padding:0 16px;gap:6px;font-size:14px;font-weight:500" data-act="go" data-v="addExpense">${icon('plus')}เพิ่ม</button></div>
+  <div style="margin:14px 20px 0;display:flex;gap:8px;align-items:center">${pchip('month','รายเดือน')}${pchip('year','รายปี')}
+    <span style="flex:1"></span><button class="iconbtn" data-act="mshift" data-d="-1" aria-label="ช่วงก่อนหน้า">${icon('back')}</button><button class="iconbtn" data-act="mshift" data-d="1" aria-label="ช่วงถัดไป" style="transform:scaleX(-1)">${icon('back')}</button></div>
+  <div style="margin:14px 20px 0;background:#2B211B;color:#fff;border-radius:26px;padding:20px;position:relative;overflow:hidden">
+    <div style="position:absolute;right:-40px;top:-50px;width:170px;height:170px;border-radius:50%;background:#F28C28;opacity:.18"></div>
+    <div style="position:relative;font-size:13px;color:#E8DCCF">รวม ${label}</div>
+    <div class="mitr" style="position:relative;font-size:38px;font-weight:600;margin-top:4px">${baht(total)}</div>
+    <div style="position:relative;display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">${['ติดบ้าน','สุขภาพ','กรอกเอง'].map(s=>`<span style="font-size:12px;background:rgba(255,255,255,.14);border-radius:999px;padding:4px 10px">${s} ${baht(bySrc(s))}</span>`).join('')}</div></div>
+  <div class="seg">${seg('cat','ต่อหมวด')}${seg('pet','ต่อตัว')}</div>
+  <div class="card" style="padding:6px 16px">${rows.map(r=>`<div style="padding:12px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;align-items:center;gap:10px"><i style="width:12px;height:12px;border-radius:6px;background:${r.color};flex-shrink:0"></i><span style="flex:1;font-size:14px;font-weight:500">${esc(r.name)}${r.note?` <span class="sub" style="font-size:11px;font-weight:400">${r.note}</span>`:''}</span><span class="mitr" style="font-size:15px">${baht(r.amt)}</span></div>
+    <div style="height:8px;border-radius:4px;background:var(--chip);overflow:hidden"><div style="height:100%;width:${(r.amt/mx*100).toFixed(1)}%;background:${r.color};border-radius:4px"></div></div></div>`).join('')}</div>
+  <section style="margin:18px 20px 0"><h2 style="margin:0 0 10px;font-size:17px;font-weight:500">รายการ${label}</h2>
+    <div class="card list" style="margin:0;padding:4px 16px">${list.length?list.map(e=>`<div class="it"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:500">${esc(e.title)}</div><div class="sub" style="font-size:12px">${e.src} · ${esc(e.cat)} · ${esc(petName(e.pet_id))} · ${fmtDate(e.date)}</div></div><span class="mitr" style="font-size:15px">${baht(e.amount)}</span>${e.del?`<button class="del ${S.delSure===e.id?'sure':''}" data-act="delE" data-id="${e.id}">${S.delSure===e.id?'ยืนยัน':'ลบ'}</button>`:''}</div>`).join(''):'<div class="sub" style="padding:14px 0">ยังไม่มีรายการในช่วงนี้</div>'}</div>
+    <p class="sub" style="font-size:12px">รายการจากติดบ้านแก้ที่แอพติดบ้าน รายการจากสุขภาพแก้ที่หน้าสุขภาพ</p></section>`;
+}
+
+function vAddExpense(){
+  const c = S.ecat || 'อาหาร';
+  return `<div class="band" style="background:#F6EEE5"></div>
+  <form class="sheet" data-form="expense" novalidate>
+    <div class="row"><h1 style="margin:0;font-size:22px;font-weight:600">เพิ่มค่าใช้จ่าย</h1><button type="button" class="iconbtn" style="background:var(--chip)" data-act="go" data-v="money" aria-label="ปิด">${icon('close')}</button></div>
+    <div class="chips" role="radiogroup" aria-label="หมวด">${EXP_CATS.map(k=>`<button type="button" class="chip" role="radio" aria-checked="${k===c}" data-act="ecat" data-c="${k}" style="${k===c?`border-color:${EXP_COL[k]};color:#2B211B;background:#FFF6EC`:''}"><i style="background:${EXP_COL[k]}"></i>${k}</button>`).join('')}</div>
+    <div class="big" style="background:#FFF6EC"><label for="amt" style="font-size:13px;color:var(--soft)">จำนวนเงิน (บาท)</label><input id="amt" name="amount" inputmode="decimal" placeholder="0" autocomplete="off" style="color:#2B211B"></div>
+    <label class="f">รายการ<input class="inp" name="title" maxlength="200" placeholder="เช่น ขนมแมว, ค่าตัดเล็บ"></label>
+    <label class="f">ของใคร<select class="inp" name="pet_id"><option value="">ใช้ร่วมกันทั้งบ้าน</option>${pets().map(p=>`<option value="${p.pet_id}">${esc(p.name)}</option>`).join('')}</select></label>
+    <label class="f">วันที่<input class="inp" type="date" name="date" value="${today()}" max="${today()}"></label>
+    <label class="f">โน้ต (ไม่ใส่ก็ได้)<input class="inp" name="note" maxlength="200"></label>
+    <p class="sub" style="font-size:12px;margin:-8px 0 0">ของที่ซื้อผ่านแอพติดบ้าน (หมวดของแมว) กับค่าใช้จ่ายในหน้าสุขภาพ นับให้อัตโนมัติแล้ว ไม่ต้องกรอกซ้ำ</p>
+    <button class="btn" type="submit" style="background:#2B211B" ${S.busy?'disabled':''}>${S.busy?'กำลังบันทึก…':'บันทึก'}</button>
+  </form>`;
 }
 
 function vSettings(){
@@ -478,11 +679,32 @@ function render(){
   if(!S.cfg.url && !S.cfg.demo){ app.innerHTML = vSetup(); return; }
   if(!S.data){ app.innerHTML = `<div style="padding:120px 20px;text-align:center"><div class="spin"></div><p class="sub">กำลังโหลดข้อมูลน้องๆ…</p></div>`; return; }
   applyTheme();
-  const V = {home:vHome, weights:vWeights, add:vAdd, profile:vProfile, edit:vEdit, settings:vSettings, care:vSoon, health:vSoon, money:vSoon}[S.view] || vHome;
-  const focusKg = S.view==='add' ? (document.activeElement && document.activeElement.name==='kg') : false;
-  const keep = {}; if(S.view==='add'){ const f=document.querySelector('form[data-form=weight]'); if(f){ ['kg','date','note'].forEach(n=>keep[n]=f.elements[n].value); } }
-  app.innerHTML = V() + (['add','edit'].includes(S.view)?'':navBar()) + (S.viewer?vViewer():'');
-  if(S.view==='add'){ const f=document.querySelector('form[data-form=weight]'); Object.keys(keep).forEach(n=>{ if(keep[n]!=null) f.elements[n].value=keep[n]; }); if(focusKg) f.elements.kg.focus(); }
+  const V = {home:vHome, weights:vWeights, add:vAdd, profile:vProfile, edit:vEdit, settings:vSettings, care:vCare, health:vHealth, money:vMoney, addHealth:vAddHealth, addExpense:vAddExpense}[S.view] || vHome;
+  // เก็บค่าที่กรอกค้างไว้ในฟอร์ม เวลาหน้าจอวาดใหม่ในหน้าเดิม
+  const keep = {}; let focusName = null;
+  const oldForm = document.querySelector('form[data-form]');
+  if(oldForm && S._lastView === S.view){
+    [...oldForm.elements].forEach(el=>{ if(el.name) keep[el.name] = el.type==='checkbox' ? el.checked : el.value; });
+    if(document.activeElement && oldForm.contains(document.activeElement)) focusName = document.activeElement.name;
+  }
+  app.innerHTML = V() + (['add','edit','addHealth','addExpense'].includes(S.view)?'':navBar()) + (S.viewer?vViewer():'');
+  const nf = document.querySelector('form[data-form]');
+  if(nf) Object.keys(keep).forEach(n=>{ const el = nf.elements[n]; if(!el || el.length) return; if(el.type==='checkbox') el.checked = keep[n]; else el.value = keep[n]; });
+  if(nf && focusName && nf.elements[focusName] && !nf.elements[focusName].length) nf.elements[focusName].focus();
+  S._lastView = S.view;
+}
+
+async function logCare(task, pid, extra){
+  if(S.busy) return;
+  S.busy = true;
+  try {
+    const row = await api('logCare', Object.assign({task, pet_id:pid, date:today()}, extra||{}));
+    S.data.care = arr('care').concat([row]); LS.set('pt_data',S.data);
+    const p = pets().find(q=>q.pet_id===pid);
+    toast((task==='bath' && p ? 'อาบน้ำ '+p.name : CARE.find(c=>c.k===task).name) + ' บันทึกแล้ว' + (row.cal_event_id?' และสร้างนัดในปฏิทินแล้ว':''));
+    S.careForm = false;
+  } catch(err){ toast('บันทึกไม่สำเร็จ: '+err.message); }
+  S.busy = false; render();
 }
 
 /* ===== events ===== */
@@ -490,7 +712,7 @@ document.addEventListener('click', async e=>{
   const b = e.target.closest('[data-act]'); if(!b) return;
   const a = b.dataset.act;
   if(a==='pick'){ S.cur = +b.dataset.i; LS.set('pt_cur', S.cur); S.delSure=null; render(); }
-  else if(a==='go'){ S.view = b.dataset.v; S.delSure=null; render(); window.scrollTo(0,0); if(S.view==='add') setTimeout(()=>{const k=document.getElementById('kg'); k&&k.focus();},50); }
+  else if(a==='go'){ S.view = b.dataset.v; S.delSure=null; S.careForm=false; render(); window.scrollTo(0,0); if(S.view==='add') setTimeout(()=>{const k=document.getElementById('kg'); k&&k.focus();},50); }
   else if(a==='toggle'){ S.hidden[b.dataset.id] = !S.hidden[b.dataset.id]; render(); }
   else if(a==='photo'){ openViewer(b.dataset.k); }
   else if(a==='replace'){ pickPhoto(b.dataset.k); }
@@ -502,6 +724,38 @@ document.addEventListener('click', async e=>{
     catch(err){ toast('ลบไม่สำเร็จ: '+err.message); }
     S.delSure=null; render();
   }
+  else if(a==='care'){ logCare(b.dataset.k, b.dataset.pid||''); }
+  else if(a==='careChange'){ S.careForm = true; render(); }
+  else if(a==='careFormClose'){ S.careForm = false; render(); }
+  else if(a==='careUndo'){
+    const id = b.dataset.id;
+    if(S.delSure!==id){ S.delSure=id; render(); return; }
+    try { await api('deleteCare',{log_id:id}); S.data.care = arr('care').filter(c=>c.log_id!==id); LS.set('pt_data',S.data); toast('ยกเลิกแล้ว'); }
+    catch(err){ toast('ยกเลิกไม่สำเร็จ: '+err.message); }
+    S.delSure=null; render();
+  }
+  else if(a==='htab'){ S.htab = b.dataset.v; S.delSure=null; render(); }
+  else if(a==='addH'){ S.htype = b.dataset.t; S.view='addHealth'; render(); window.scrollTo(0,0); }
+  else if(a==='htype'){ S.htype = b.dataset.t; render(); }
+  else if(a==='delH' || a==='delE'){
+    const id = b.dataset.id;
+    if(S.delSure!==id){ S.delSure=id; render(); return; }
+    try {
+      if(a==='delH'){ await api('deleteHealth',{rec_id:id}); S.data.health = arr('health').filter(r=>r.rec_id!==id); }
+      else { await api('deleteExpense',{exp_id:id}); S.data.expenses = arr('expenses').filter(r=>r.exp_id!==id); }
+      LS.set('pt_data',S.data); toast('ลบแล้ว');
+    } catch(err){ toast('ลบไม่สำเร็จ: '+err.message); }
+    S.delSure=null; render();
+  }
+  else if(a==='mper'){ S.mper = b.dataset.v; render(); }
+  else if(a==='mview'){ S.mview = b.dataset.v; render(); }
+  else if(a==='mshift'){
+    const d = +b.dataset.d;
+    if((S.mper||'month')==='month'){ const ym = S.ym || today().slice(0,7); let y=+ym.slice(0,4), m=+ym.slice(5)+d; if(m<1){m=12;y--;} if(m>12){m=1;y++;} S.ym = y+'-'+String(m).padStart(2,'0'); }
+    else S.yy = String(+(S.yy || today().slice(0,4)) + d);
+    render();
+  }
+  else if(a==='ecat'){ S.ecat = b.dataset.c; render(); }
   else if(a==='refresh'){ S.busy=true; render(); await load(); S.busy=false; render(); toast('อัปเดตแล้ว'); }
   else if(a==='logout'){ S.cfg={}; S.data=null; LS.set('pt_cfg',{}); LS.set('pt_data',null); S.view='home'; render(); }
   else if(a==='demo'){ S.cfg={demo:true}; LS.set('pt_cfg',S.cfg); S.data=null; render(); load(); }
@@ -528,6 +782,30 @@ document.addEventListener('submit', async e=>{
       S.data.weights.push(w); LS.set('pt_data',S.data);
       S.busy=false; S.view='home'; render(); toast(`บันทึก ${p.name} ${kg.toFixed(2)} กก. แล้ว`);
     } catch(err){ S.busy=false; render(); toast('บันทึกไม่สำเร็จ: '+err.message); }
+  }
+  if(kind==='change'){
+    const nd = f.elements.next_due.value;
+    await logCare('change', '', {next_due: nd, calendar: !!(nd && f.elements.calendar.checked)});
+  }
+  if(kind==='health'){
+    const p = cur();
+    const cost = String(f.elements.cost.value).replace(/,/g,'').trim();
+    if(cost && !(+cost >= 0)){ toast('ค่าใช้จ่ายต้องเป็นตัวเลข'); return; }
+    if(!f.elements.date.value){ toast('เลือกวันที่ด้วย'); return; }
+    const o = {pet_id:p.pet_id, type:S.htype||'vaccine', date:f.elements.date.value, title:f.elements.title.value.trim(), clinic:f.elements.clinic.value.trim(),
+      detail:f.elements.detail.value.trim(), cost, next_due:f.elements.next_due.value, calendar:f.elements.calendar.checked};
+    S.busy=true; render();
+    try { const row = await api('addHealth', o); S.data.health = arr('health').concat([row]); LS.set('pt_data',S.data); S.busy=false; S.view='health'; S.htab='hist'; render(); toast('บันทึก'+HT[o.type]+' '+p.name+' แล้ว'+(row.cal_event_id?' · สร้างนัดในปฏิทินแล้ว':'')); }
+    catch(err){ S.busy=false; render(); toast('บันทึกไม่สำเร็จ: '+err.message); }
+  }
+  if(kind==='expense'){
+    const amount = parseFloat(String(f.elements.amount.value).replace(/,/g,''));
+    if(!(amount>0)){ toast('ใส่จำนวนเงินด้วย'); f.elements.amount.focus(); return; }
+    const o = {category:S.ecat||'อาหาร', amount, title:f.elements.title.value.trim(), pet_id:f.elements.pet_id.value, date:f.elements.date.value, note:f.elements.note.value.trim()};
+    if(!o.date){ toast('เลือกวันที่ด้วย'); return; }
+    S.busy=true; render();
+    try { const row = await api('addExpense', o); S.data.expenses = arr('expenses').concat([row]); LS.set('pt_data',S.data); S.busy=false; S.view='money'; S.ym=o.date.slice(0,7); S.mper='month'; render(); toast('บันทึก '+baht(amount)+' แล้ว'); }
+    catch(err){ S.busy=false; render(); toast('บันทึกไม่สำเร็จ: '+err.message); }
   }
   if(kind==='pet'){
     const p = cur(); const o = {pet_id:p.pet_id};
