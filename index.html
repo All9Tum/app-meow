@@ -90,6 +90,30 @@ textarea.inp{height:auto;min-height:84px;padding:12px 14px;resize:vertical}
 .soon{margin:40px 20px 0;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}
 .soon .ic{width:84px;height:84px;border-radius:28px;background:#fff;display:flex;align-items:center;justify-content:center;color:var(--deep)}
 .soon .ic svg{width:40px;height:40px}
+
+/* หัวแบบแท็บแฟ้ม: ล็อกค้างด้านบน ยุบเมื่อเลื่อนลง */
+.fh{position:sticky;top:0;z-index:3;background:var(--bg);padding:14px 20px 12px;transition:padding .2s,box-shadow .2s}
+.fh .tabs{display:flex;align-items:flex-end;gap:4px;height:48px;transition:height .2s}
+.fh .tab{flex:1;min-width:0;border:none;padding:0;display:flex;align-items:center;justify-content:center;border-radius:14px 14px 0 0;height:36px;transition:height .2s}
+.fh .tab[aria-pressed=true]{height:48px}
+.fh .tab i{display:block;border-radius:999px;width:24px;height:8px}
+.fh .tab[aria-pressed=true] i{width:36px;height:10px}
+.fh .body{padding:14px 16px;display:flex;align-items:center;gap:14px;background:var(--tint);transition:padding .2s}
+.fh .fphoto{width:64px;height:64px;border-radius:32px;background:#fff center/cover no-repeat;border:3px solid #fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);box-shadow:0 4px 12px rgba(43,33,27,.10);padding:0;transition:width .2s,height .2s}
+.fh .fname{font-family:'Mitr',sans-serif;font-size:24px;font-weight:600;line-height:1.15;color:var(--deep);overflow-wrap:anywhere;transition:font-size .2s}
+.fh .ftag{font-size:14px;color:var(--soft);overflow-wrap:anywhere}
+.fh .fright{flex-shrink:0;display:flex;gap:8px;align-items:center}
+.fh .fright .pill{font-size:14px;padding:11px 14px}
+body.scrolled .fh{padding:8px 20px 8px;box-shadow:0 6px 16px rgba(43,33,27,.10)}
+body.scrolled .fh .tabs{height:40px}
+body.scrolled .fh .tab{height:30px}
+body.scrolled .fh .tab[aria-pressed=true]{height:40px}
+body.scrolled .fh .body{padding:8px 14px;gap:10px}
+body.scrolled .fh .fphoto{width:38px;height:38px;border-width:2px}
+body.scrolled .fh .fphoto svg{width:16px;height:16px}
+body.scrolled .fh .fname{font-size:18px}
+body.scrolled .fh .ftag{font-size:13px}
+body.scrolled .fh .fright .pill{padding:7px 12px;font-size:13px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -335,29 +359,27 @@ function catRow(){
 }
 function navBar(){
   const items=[['home','home','หน้าแรก'],['care','drop','ดูแล'],['health','heart','สุขภาพ'],['money','wallet','ค่าใช้จ่าย'],['profile','user','โปรไฟล์']];
-  const onv = {weights:'home',add:'home',edit:'profile',addHealth:'health',addExpense:'money'}[S.view] || S.view;
+  const onv = {weights:'home',add:'home',edit:'profile',settings:'profile',addHealth:'health',addExpense:'money'}[S.view] || S.view;
   return `<nav class="bar" aria-label="เมนูหลัก">${items.map(([v,ic,l])=>`<button data-act="go" data-v="${v}" class="${onv===v?'on':''}" ${onv===v?'aria-current="page"':''}>${icon(ic)}${l}</button>`).join('')}</nav>`;
 }
 function hills(){ return `<div class="hill" style="left:-40px;bottom:-70px;width:260px;height:140px;opacity:.22"></div><div class="hill" style="right:-60px;bottom:-80px;width:300px;height:150px;opacity:.14"></div>`; }
 
+function folderHeader(right){
+  const ps = pets(); const p = cur(); const n = ps.length;
+  const t = p.photo_id && S.thumbs[p.photo_id];
+  const radius = S.cur===0 ? '0 20px 20px 20px' : S.cur===n-1 ? '20px 0 20px 20px' : '20px';
+  return `<header class="fh"><div class="tabs" role="tablist" aria-label="เลือกน้อง">${ps.map((q,k)=>`<button class="tab" role="tab" data-act="pick" data-i="${k}" aria-pressed="${k===S.cur}" aria-selected="${k===S.cur}" aria-label="${esc(q.name)}" style="background:${q.color_tint}"><i style="background:${q.color_main}"></i></button>`).join('')}</div>
+    <div class="body" style="border-radius:${radius}">
+      <button class="fphoto" data-act="photo" data-k="photo" aria-label="${t?'ดูรูป':'เพิ่มรูป'} ${esc(p.name)}" style="${t?`background-image:url('${t}')`:''}">${t?'':icon('cam')}</button>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span class="fname">${esc(p.name)}</span>${p.hashtag?`<span class="ftag">#${esc(p.hashtag)}</span>`:''}</div>
+      <div class="fright">${right||''}</div>
+    </div></header>`;
+}
+
 function vHome(){
   const p = cur(); const ws = weightsOf(p.pet_id); const last = ws[ws.length-1];
-  const t = p.photo_id && S.thumbs[p.photo_id];
-  const h = new Date().getHours();
-  const greet = h<11?'สวัสดีตอนเช้า':h<16?'สวัสดีตอนบ่าย':h<19?'สวัสดีตอนเย็น':'สวัสดีตอนค่ำ';
-  return `<div class="top"><div><div class="sub">${greet}</div><h1>น้องๆ วันนี้เป็นไงบ้าง</h1></div>
-    <button class="iconbtn" data-act="go" data-v="settings" aria-label="ตั้งค่า">${icon('gear')}</button></div>
-  ${catRow()}
-  <div class="hero">${hills()}<div class="in">
-    <div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <div class="name">${esc(p.name)}</div>
-      ${p.hashtag?`<div style="font-size:13px;color:var(--soft)">#${esc(p.hashtag)}</div>`:''}
-      ${p.breed||p.coat?`<div style="font-size:13px;color:var(--soft)">${esc([p.breed,p.coat].filter(Boolean).join(' · '))}</div>`:''}
-      <button class="pill" data-act="go" data-v="profile" style="align-self:flex-start">ดูโปรไฟล์</button>
-    </div>
-    <button class="photo" data-act="photo" data-k="photo" aria-label="${t?'ดูรูป':'เพิ่มรูป'} ${esc(p.name)}" style="${t?`background-image:url('${t}')`:''}">${t?'':icon('cam')+'<span>เพิ่มรูปน้อง</span>'}</button>
-  </div></div>
-  <div class="stats">
+  return `${folderHeader(`<button class="pill" data-act="go" data-v="profile">โปรไฟล์</button>`)}
+  <div class="stats" style="margin-top:4px">
     <div class="stat"><span class="l">น้ำหนักล่าสุด</span><span class="v">${last?last.kg.toFixed(2)+' กก.':'—'}</span><span class="l">${last?fmtDate(last.date):'ยังไม่เคยชั่ง'}</span></div>
     <div class="stat"><span class="l">อายุ</span><span class="v sm">${age(p.birthday)||'<span class="ph">ยังไม่ใส่วันเกิด</span>'}</span><span class="l">${p.birthday?fmtDate(p.birthday):'&nbsp;'}</span></div>
     <div class="stat"><span class="l">เพศ</span><span class="v sm">${esc(p.sex)||'<span class="ph">ยังไม่ระบุ</span>'}</span><span class="l">${p.neutered?'ทำหมัน'+esc(p.neutered):'&nbsp;'}</span></div>
@@ -407,14 +429,7 @@ function kv(k, v, ph){ return `<div class="kv"><span class="k">${k}</span><span 
 function vProfile(){
   const p = cur(); const t = p.photo_id && S.thumbs[p.photo_id];
   const f = p.card_front_id && S.thumbs[p.card_front_id], b = p.card_back_id && S.thumbs[p.card_back_id];
-  return `<div style="background:var(--tint);border-radius:0 0 36px 36px;padding:20px 20px 28px;position:relative;overflow:hidden">${hills()}
-    <div class="row" style="position:relative"><button class="iconbtn" data-act="go" data-v="home" aria-label="กลับหน้าแรก">${icon('back')}</button><span class="mitr" style="font-size:17px;font-weight:500">โปรไฟล์</span><button class="iconbtn" data-act="go" data-v="edit" aria-label="แก้ไขโปรไฟล์">${icon('edit')}</button></div>
-    <div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:12px">
-      <button class="photo" style="width:128px;height:128px;${t?`background-image:url('${t}')`:''}" data-act="photo" data-k="photo" aria-label="${t?'ดูรูป':'เพิ่มรูป'} ${esc(p.name)}">${t?'':icon('cam')+'<span>เพิ่มรูปน้อง</span>'}</button>
-      <h1 style="margin:4px 0 0;font-size:32px;font-weight:600;color:var(--deep)">${esc(p.name)}</h1>
-      ${p.hashtag?`<span class="pill" style="padding:6px 14px">#${esc(p.hashtag)}</span>`:''}
-    </div></div>
-  ${catRow()}
+  return `${folderHeader(`<button class="iconbtn" data-act="go" data-v="edit" aria-label="แก้ไขโปรไฟล์ ${esc(p.name)}">${icon('edit')}</button>`)}
   <section class="card" style="padding:8px 18px"><h2 style="margin:10px 0 4px">ข้อมูลน้อง</h2>
     ${kv('วันเกิด', fmtDate(p.birthday))}${kv('อายุ', age(p.birthday), 'ใส่วันเกิดก่อน')}${kv('วันรับมาเลี้ยง', fmtDate(p.adopted_on))}
     ${kv('สายพันธุ์', p.breed)}${kv('สี', p.coat)}${kv('เพศ', p.sex)}${kv('ทำหมัน', p.neutered)}${kv('ไมโครชิป', p.microchip)}</section>
@@ -424,7 +439,8 @@ function vProfile(){
       <button class="idc ${b?'has':''}" data-act="photo" data-k="card_back" style="${b?`background-image:url('${b}')`:''}" aria-label="${b?'ดูหลังบัตร':'อัปโหลดหลังบัตร'}">${b?'<span class="tag">หลังบัตร</span>':icon('cam')+'อัปโหลดหลังบัตร'}</button>
     </div>
     <div style="margin-top:6px">${kv('ชื่อเจ้าของ', p.owner_name)}${kv('ที่อยู่', p.owner_address)}${kv('วันออกบัตร', fmtDate(p.card_issued_on))}</div>
-    <p class="sub" style="font-size:12px;margin:10px 0 0">รูปเก็บในโฟลเดอร์ Google Drive ของตาตั้มเอง ไม่ได้แชร์สาธารณะ</p></section>`;
+    <p class="sub" style="font-size:12px;margin:10px 0 0">รูปเก็บในโฟลเดอร์ Google Drive ของตาตั้มเอง ไม่ได้แชร์สาธารณะ</p></section>
+  <div style="margin:14px 20px 0"><button class="btn ghost" data-act="go" data-v="settings" style="display:flex;align-items:center;justify-content:center;gap:8px">${icon('gear')}ตั้งค่าแอพ</button></div>`;
 }
 
 function vEdit(){
@@ -550,10 +566,8 @@ function vHealth(){
       <span class="sub" style="font-size:12px">${[r.clinic, r.detail, r.cost!==''&&r.cost!=null?baht(r.cost):'', r.next_due?'นัดถัดไป '+fmtDate(r.next_due):''].filter(Boolean).map(esc).join(' · ')}</span>
       <button class="del ${S.delSure===r.rec_id?'sure':''}" data-act="delH" data-id="${r.rec_id}" style="align-self:flex-end">${S.delSure===r.rec_id?'ยืนยันลบ'+(r.cal_event_id?' (ลบนัดในปฏิทินด้วย)':''):'ลบ'}</button></div>`).join(''):'<div class="sub" style="padding:16px 0">ยังไม่มีประวัติของ '+esc(p.name)+'</div>'}</div>`;
   }
-  return `<div style="padding:20px 20px 18px;position:relative;overflow:hidden;border-radius:0 0 32px 32px;background:var(--tint)"><div class="hill" style="right:-60px;bottom:-90px;width:300px;height:150px;opacity:.18"></div>
-    <h1 style="position:relative;margin:0;font-size:26px;font-weight:600">สุขภาพ</h1></div>
-  ${catRow()}
-  <div class="seg">${seg('next','นัดถัดไป')}${seg('hist','ประวัติ')}</div>
+  return `${folderHeader()}
+  <div class="seg" style="margin-top:4px">${seg('next','นัดถัดไป')}${seg('hist','ประวัติ')}</div>
   ${body}
   <section style="margin:20px 20px 0"><h2 style="margin:0 0 10px;font-size:17px;font-weight:500">บันทึกใหม่ของ ${esc(p.name)}</h2>
     <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${Object.keys(HT).map(t=>`<button data-act="addH" data-t="${t}" style="height:76px;border-radius:18px;border:none;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:13px"><span style="display:flex;color:var(--deep)">${hic(HT_IC[t])}</span>${HT[t]}</button>`).join('')}</div></section>`;
@@ -644,7 +658,7 @@ function vAddExpense(){
 }
 
 function vSettings(){
-  return `<div class="top"><button class="iconbtn" data-act="go" data-v="home" aria-label="กลับหน้าแรก">${icon('back')}</button><h1 style="font-size:20px;margin:0">ตั้งค่า</h1><span style="width:44px"></span></div>
+  return `<div class="top"><button class="iconbtn" data-act="go" data-v="profile" aria-label="กลับหน้าโปรไฟล์">${icon('back')}</button><h1 style="font-size:20px;margin:0">ตั้งค่า</h1><span style="width:44px"></span></div>
   <div class="card">${S.cfg.demo?'<b>โหมดทดลอง</b><p class="sub">ข้อมูลอยู่ในเครื่องนี้เท่านั้น ไม่ได้บันทึกลง Google Sheet</p>':`<div class="sub">เชื่อมต่อกับ</div><div style="font-size:12px;word-break:break-all;margin-top:4px">${esc(S.cfg.url)}</div>`}</div>
   <div style="margin:14px 20px 0;display:flex;flex-direction:column;gap:10px">
     <button class="btn ghost" data-act="refresh">${S.busy?'กำลังโหลด…':'ดึงข้อมูลล่าสุดจากชีต'}</button>
@@ -760,6 +774,7 @@ document.addEventListener('click', async e=>{
   else if(a==='logout'){ S.cfg={}; S.data=null; LS.set('pt_cfg',{}); LS.set('pt_data',null); S.view='home'; render(); }
   else if(a==='demo'){ S.cfg={demo:true}; LS.set('pt_cfg',S.cfg); S.data=null; render(); load(); }
 });
+window.addEventListener('scroll', ()=>{ document.body.classList.toggle('scrolled', window.scrollY > 40); }, {passive:true});
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && S.viewer){ S.viewer=null; render(); } });
 document.addEventListener('submit', async e=>{
   const f = e.target; e.preventDefault();
