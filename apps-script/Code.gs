@@ -1,5 +1,5 @@
 /**
- * แอพแมว — Apps Script API
+ * App Meow (แอพเหมียว) — Apps Script API
  * 1) สร้างโปรเจกต์ที่ script.google.com แล้ววางไฟล์นี้
  * 2) รัน setup() หนึ่งครั้ง (สร้าง Google Sheet "Pet tracking app", โฟลเดอร์รูป และ API KEY)
  * 3) Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone)
