@@ -32,11 +32,11 @@ var PET_EDITABLE = ['name', 'hashtag', 'birthday', 'adopted_on', 'breed', 'coat'
 var PHOTO_KINDS = { photo: 'photo_id', card_front: 'card_front_id', card_back: 'card_back_id' };
 
 var SEED_PETS = [
-  ['P01', 'Satang', '#3B6FD9', '#2853AE', '#E3ECFB', 'Satang Stories'],
-  ['P02', 'Mali', '#EC6FA6', '#B83A76', '#FCE4EF', 'Mali Rhyme'],
-  ['P03', 'Elize', '#E04B4B', '#B52F2F', '#FBE3E1', 'Elize Tales'],
-  ['P04', 'Magnum', '#4CC46A', '#1F7A3A', '#E0F5E5', 'Magnum Saga'],
-  ['P05', 'Sephera', '#F28C28', '#A8530A', '#FDEBD7', '']
+  ['P01', 'Satang', '#3B6FD9', '#2853AE', '#E3ECFB', 'SatangStories'],
+  ['P02', 'Mali', '#EC6FA6', '#B83A76', '#FCE4EF', 'MaliRhyme'],
+  ['P03', 'Elize', '#E04B4B', '#B52F2F', '#FBE3E1', 'ElizeTales'],
+  ['P04', 'Magnum', '#4CC46A', '#1F7A3A', '#E0F5E5', 'MagnumSaga'],
+  ['P05', 'Sephera', '#F28C28', '#A8530A', '#FDEBD7', 'SepheraDiaries']
 ];
 
 // น้ำหนักจากชีต "Pet tracking" เดิม ย้ายมาทุกแถว (0 = ยังไม่มีน้องตัวนั้น จึงไม่ย้าย)

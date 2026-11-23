@@ -173,7 +173,7 @@ async function api(action, payload){
 
 /* ----- demo (ข้อมูลอยู่ในเครื่องนี้เท่านั้น) ----- */
 const DEMO_SEED = (()=>{
-  const P = [['P01','Satang','#3B6FD9','#2853AE','#E3ECFB','Satang Stories'],['P02','Mali','#EC6FA6','#B83A76','#FCE4EF','Mali Rhyme'],['P03','Elize','#E04B4B','#B52F2F','#FBE3E1','Elize Tales'],['P04','Magnum','#4CC46A','#1F7A3A','#E0F5E5','Magnum Saga'],['P05','Sephera','#F28C28','#A8530A','#FDEBD7','']];
+  const P = [['P01','Satang','#3B6FD9','#2853AE','#E3ECFB','SatangStories'],['P02','Mali','#EC6FA6','#B83A76','#FCE4EF','MaliRhyme'],['P03','Elize','#E04B4B','#B52F2F','#FBE3E1','ElizeTales'],['P04','Magnum','#4CC46A','#1F7A3A','#E0F5E5','MagnumSaga'],['P05','Sephera','#F28C28','#A8530A','#FDEBD7','SepheraDiaries']];
   const pets = P.map((p,i)=>({pet_id:p[0],name:p[1],color_main:p[2],color_deep:p[3],color_tint:p[4],hashtag:p[5],birthday:'',adopted_on:'',breed:'',coat:'',sex:'',neutered:'',microchip:'',photo_id:'',card_front_id:'',card_back_id:'',owner_name:'',owner_address:'',card_issued_on:'',sort:i+1}));
   const W = [['2021-10-01',5.2,0,0,0],['2022-04-01',5.15,2.1,0,0],['2022-10-01',5.5,2.95,0,0],['2023-04-28',5.5,3.8,0,0],['2023-08-10',5.7,3.8,1.1,0],['2023-11-10',5.9,3.8,2.5,0],['2024-10-12',6,3.8,2.5,0],['2025-05-02',6,3.8,2.3,3],['2025-11-23',6,3.8,4.2,4.7],['2026-08-30',5.7,3.7,3.9,6.1]];
   const weights = []; let n=0;
@@ -434,7 +434,7 @@ function vEdit(){
   return `<div class="band">${hills()}</div>
   <form class="sheet" data-form="pet" novalidate>
     <div class="row"><h1 style="margin:0;font-size:22px;font-weight:600">แก้ไขโปรไฟล์</h1><button type="button" class="iconbtn" style="background:var(--chip)" data-act="go" data-v="profile" aria-label="ปิด">${icon('close')}</button></div>
-    ${inp('name','ชื่อ')}${inp('hashtag','แฮชแท็ก (ไม่ต้องใส่ #)','text','เช่น Satang Stories')}
+    ${inp('name','ชื่อ')}${inp('hashtag','แฮชแท็ก (ไม่ต้องใส่ # และไม่เว้นวรรค)','text','เช่น SatangStories')}
     ${inp('birthday','วันเกิด','date')}${inp('adopted_on','วันรับมาเลี้ยง','date')}
     ${inp('breed','สายพันธุ์')}${inp('coat','สีขน')}
     ${sel('sex','เพศ',['ผู้','เมีย'])}${sel('neutered','ทำหมัน',['แล้ว','ยัง'])}
@@ -810,7 +810,7 @@ document.addEventListener('submit', async e=>{
   if(kind==='pet'){
     const p = cur(); const o = {pet_id:p.pet_id};
     ['name','hashtag','birthday','adopted_on','breed','coat','sex','neutered','microchip','owner_name','owner_address','card_issued_on'].forEach(n=>o[n]=f.elements[n].value.trim());
-    o.hashtag = o.hashtag.replace(/^#/, '');
+    o.hashtag = o.hashtag.replace(/^#/, '').replace(/\s+/g, '');
     if(!o.name){ toast('ต้องมีชื่อน้อง'); return; }
     S.busy=true; render();
     try { const row = await api('savePet', o); Object.assign(p, row); LS.set('pt_data',S.data); S.busy=false; S.view='profile'; render(); toast('บันทึกโปรไฟล์แล้ว'); }
