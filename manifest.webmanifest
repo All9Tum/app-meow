@@ -1,7 +1,6 @@
 {
   "name": "App Meow (แอพเหมียว)",
   "short_name": "App Meow",
-  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#FFF6EC",

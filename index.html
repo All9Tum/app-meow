@@ -674,9 +674,9 @@ function vSetup(){
   return `<div style="padding:40px 24px;display:flex;flex-direction:column;gap:18px">
     <img src="icon-180.png" alt="" width="72" height="72" style="border-radius:20px;box-shadow:0 6px 16px rgba(43,33,27,.15)">
     <h1 style="margin:0;font-size:28px;font-weight:600">App Meow</h1><div class="sub" style="margin-top:-12px">แอพเหมียว</div>
-    <p class="sub" style="margin:0;line-height:1.6">เชื่อมกับ Google Sheet ของตาตั้ม ใส่ Web app URL และ API KEY จาก Apps Script หรือเปิดจากลิงก์ตั้งค่าที่ซีซาร์ส่งให้</p>
+    <p class="sub" style="margin:0;line-height:1.6">เชื่อมกับ Google Sheet ของตาตั้ม ใส่ Web app URL และ API KEY จาก Apps Script หรือวางลิงก์ตั้งค่าที่ซีซาร์ส่งให้ไว้ในช่องแรกช่องเดียวก็ได้</p>
     <form data-form="setup" style="display:flex;flex-direction:column;gap:14px" novalidate>
-      <label class="f">Web app URL<input class="inp" name="url" type="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(S.cfg.url||'')}"></label>
+      <label class="f">Web app URL หรือวางลิงก์ตั้งค่าทั้งลิงก์<input class="inp" name="url" type="text" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(S.cfg.url||'')}"></label>
       <label class="f">API KEY<input class="inp" name="key" type="text" autocomplete="off" value="${esc(S.cfg.key||'')}"></label>
       <button class="btn" type="submit" style="background:#2853AE">เชื่อมต่อ</button>
     </form>
@@ -784,6 +784,8 @@ document.addEventListener('submit', async e=>{
   const f = e.target; e.preventDefault();
   const kind = f.dataset.form;
   if(kind==='setup'){
+    const pasted = parseSetup(f.elements.url.value);
+    if(pasted){ S.cfg=pasted; LS.set('pt_cfg',S.cfg); S.data=null; render(); load(); return; }
     const url = f.elements.url.value.trim(), key = f.elements.key.value.trim();
     if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)){ toast('URL ต้องเป็นลิงก์ Apps Script ที่ลงท้ายด้วย /exec'); return; }
     if(!key){ toast('ใส่ API KEY ด้วย'); return; }
@@ -837,15 +839,20 @@ document.addEventListener('submit', async e=>{
   }
 });
 
-/* ลิงก์ตั้งค่า: #setup=<base64url ของ {"u":url,"k":key}> */
-(function(){
-  const m = location.hash.match(/^#setup=(.+)$/); if(!m) return;
+/* ลิงก์ตั้งค่า: #setup=<base64url ของ {"u":url,"k":key}>
+   ไม่ลบ hash ออกจาก URL เพื่อให้ Add to Home Screen ของ iPhone จำค่าไปด้วย
+   (แอพบนหน้าจอโฮมเก็บข้อมูลแยกจาก Safari) */
+function parseSetup(text){
+  const m = String(text||'').match(/#setup=([A-Za-z0-9_\-+\/=]+)/); if(!m) return null;
   try {
-    const s = m[1].replace(/-/g,'+').replace(/_/g,'/');
-    const o = JSON.parse(decodeURIComponent(escape(atob(s))));
-    if(o.u && /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(o.u)){ S.cfg={url:o.u,key:o.k||''}; LS.set('pt_cfg',S.cfg); S.data=null; LS.set('pt_data',null); }
+    const o = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')))));
+    if(o.u && /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(o.u)) return {url:o.u, key:o.k||''};
   } catch(e){}
-  history.replaceState(null,'',location.pathname+location.search);
+  return null;
+}
+(function(){
+  const c = parseSetup(location.hash); if(!c) return;
+  if(c.url !== S.cfg.url || c.key !== S.cfg.key){ S.cfg = c; LS.set('pt_cfg',S.cfg); S.data=null; LS.set('pt_data',null); }
 })();
 
 render();
