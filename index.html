@@ -261,7 +261,7 @@ function resizeImage(file, max, q){
 function thumbFrom(dataUrl){
   return new Promise(res=>{
     const img = new Image();
-    img.onload = ()=>{ const s = 240/Math.max(img.width,img.height); const c=document.createElement('canvas'); c.width=Math.round(img.width*Math.min(1,s)); c.height=Math.round(img.height*Math.min(1,s)); c.getContext('2d').drawImage(img,0,0,c.width,c.height); res(c.toDataURL('image/jpeg',0.8)); };
+    img.onload = ()=>{ const s = 200/Math.max(img.width,img.height); const c=document.createElement('canvas'); c.width=Math.round(img.width*Math.min(1,s)); c.height=Math.round(img.height*Math.min(1,s)); c.getContext('2d').drawImage(img,0,0,c.width,c.height); res(c.toDataURL('image/jpeg',0.75)); };
     img.onerror = ()=>res('');
     img.src = dataUrl;
   });
@@ -273,16 +273,23 @@ async function getPhoto(id){
   S.photos[id] = r.dataUrl; return r.dataUrl;
 }
 async function loadThumbs(){
-  const ids = [];
-  pets().forEach(p=>['photo_id','card_front_id','card_back_id'].forEach(k=>{ if(p[k] && !S.thumbs[p[k]]) ids.push(p[k]); }));
-  for(const id of ids){
-    try { const full = await getPhoto(id); const t = await thumbFrom(full); if(t){ S.thumbs[id]=t; } } catch(e){}
+  // โหลดรูปย่อทีละรูป รูปไหนเสร็จก็แสดงทันที (เดิมรอครบทุกรูปก่อน)
+  S._thumbBusy = S._thumbBusy || {};
+  const want = [];
+  // รูปของน้องที่เปิดอยู่มาก่อน แล้วค่อยรูปอื่น
+  const order = [cur()].concat(pets().filter(p=>p!==cur())).filter(Boolean);
+  order.forEach(p=>['photo_id','card_front_id','card_back_id'].forEach(k=>{ const id=p[k]; if(id && !S.thumbs[id] && !S._thumbBusy[id] && !want.includes(id)) want.push(id); }));
+  for(const id of want){
+    S._thumbBusy[id] = true;
+    try {
+      const full = await getPhoto(id); const t = await thumbFrom(full);
+      if(t){ S.thumbs[id] = t; LS.set('pt_thumbs', S.thumbs); if(!S.viewer) render(); }
+    } catch(e){}
+    delete S._thumbBusy[id];
   }
-  // ล้าง thumbnail ที่ไม่ใช้แล้ว
   const used = new Set(); pets().forEach(p=>['photo_id','card_front_id','card_back_id'].forEach(k=>p[k]&&used.add(p[k])));
   Object.keys(S.thumbs).forEach(k=>{ if(!used.has(k)) delete S.thumbs[k]; });
   LS.set('pt_thumbs', S.thumbs);
-  if(ids.length) render();
 }
 function pickPhoto(kind){
   const p = cur();
